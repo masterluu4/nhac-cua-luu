@@ -3,148 +3,136 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Music Player V3 (Proxy)</title>
+    <title>Music Player V4 (Final)</title>
     <style>
         body { font-family: sans-serif; padding: 20px; background: #000; color: #fff; margin: 0; }
-        h2 { text-align: center; color: #ff0050; margin-bottom: 5px; }
-        .status { font-size: 11px; text-align: center; color: #888; margin-bottom: 15px; }
-        input { width: 100%; padding: 12px; margin-bottom: 10px; background: #222; border: 1px solid #333; color: white; border-radius: 20px; box-sizing: border-box; outline: none; }
-        button { width: 100%; padding: 12px; background: #ff0050; border: none; color: white; font-weight: bold; border-radius: 20px; font-size: 16px; cursor: pointer; }
-        .result-item { padding: 15px 0; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 10px; cursor: pointer;}
-        .result-img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; background: #333; }
-        .result-info { flex: 1; }
-        .result-title { font-size: 14px; font-weight: bold; margin-bottom: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .result-sub { font-size: 12px; color: #aaa; }
-        #player-controls { position: fixed; bottom: 0; left: 0; right: 0; background: #111; padding: 15px; border-top: 1px solid #333; z-index: 99; display: none; text-align: center; }
-        audio { width: 100%; margin-top: 10px; outline: none; height: 40px; }
-        #results { padding-bottom: 120px; }
+        h2 { text-align: center; color: #0f0; margin-bottom: 5px; text-transform: uppercase; }
+        .note { font-size: 11px; color: #666; text-align: center; margin-bottom: 15px; }
+        
+        input { width: 100%; padding: 15px; margin-bottom: 10px; background: #222; border: 1px solid #333; color: white; border-radius: 30px; outline: none; font-size: 16px; box-sizing: border-box;}
+        button { width: 100%; padding: 15px; background: #0f0; border: none; color: black; font-weight: 900; border-radius: 30px; font-size: 16px; cursor: pointer; text-transform: uppercase; }
+        button:active { transform: scale(0.98); }
+
+        .item { padding: 15px 0; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 15px; }
+        .thumb { width: 60px; height: 60px; border-radius: 8px; background: #333; object-fit: cover; }
+        .info { flex: 1; }
+        .title { font-weight: bold; font-size: 14px; margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .sub { font-size: 12px; color: #888; }
+        
+        #player { position: fixed; bottom: 0; left: 0; right: 0; background: #111; padding: 20px; border-top: 1px solid #333; text-align: center; display: none; z-index: 1000; }
+        audio { width: 100%; height: 40px; margin-top: 10px; }
+        #status { color: yellow; font-size: 12px; margin-top: 10px; font-style: italic; }
     </style>
 </head>
 <body>
-    <h2>Youtube Music V3</h2>
-    <div class="status" id="statusMsg">Sử dụng kênh dẫn Proxy để vượt chặn</div>
+    <h2>Music Player V4</h2>
+    <div class="note">Server: Invidious • Proxy: IO</div>
 
-    <input type="text" id="searchInput" placeholder="Tìm bài hát (VD: Lofi chill)...">
-    <button onclick="startSearch()">TÌM KIẾM</button>
-    <div id="results"></div>
+    <input type="text" id="keyword" placeholder="Nhập tên bài hát...">
+    <button onclick="search()">Tìm Kiếm</button>
+    <div id="status"></div>
+    <div id="list" style="padding-bottom: 150px; margin-top: 20px;"></div>
 
-    <div id="player-controls">
-        <div id="nowPlaying" style="font-weight:bold; font-size: 14px; margin-bottom: 5px; color: #ff0050;">Đang tải...</div>
-        <audio id="audioPlayer" controls loop autoplay></audio>
+    <div id="player">
+        <div id="song-name" style="font-weight:bold; color: #0f0; margin-bottom: 5px;"></div>
+        <audio id="audio" controls autoplay loop></audio>
     </div>
 
     <script>
-        // SỬ DỤNG PROXY ĐỂ VƯỢT LỖI CORS
-        // Proxy này sẽ thay mặt bạn gọi đến server nhạc
-        const PROXY_URL = "https://api.allorigins.win/raw?url=";
-        
-        // Danh sách server nhạc (Piped Instances)
-        const SERVERS = [
-            "https://pipedapi.kavin.rocks",
-            "https://api.piped.privacydev.net",
-            "https://pipedapi.drgns.space"
+        // Sử dụng Proxy mạnh hơn để xuyên qua tường lửa
+        const PROXY = "https://corsproxy.io/?";
+        // Danh sách các server Invidious (khác với Piped)
+        const HOSTS = [
+            "https://inv.tux.pizza",
+            "https://vid.puffyan.us",
+            "https://invidious.drgns.space"
         ];
-        
-        let currentServerIndex = 0;
 
-        async function getWithProxy(endpoint) {
-            // Thử từng server trong danh sách
-            for (let i = 0; i < SERVERS.length; i++) {
-                // Tạo link đi vòng qua Proxy
-                const targetUrl = SERVERS[i] + endpoint;
-                const finalUrl = PROXY_URL + encodeURIComponent(targetUrl);
-                
-                document.getElementById('statusMsg').innerText = `Đang kết nối qua Proxy tới Server ${i+1}...`;
-                
+        let hostIndex = 0;
+
+        function log(msg) { document.getElementById('status').innerText = msg; }
+
+        async function search() {
+            const query = document.getElementById('keyword').value;
+            if(!query) return;
+            
+            log("Đang kết nối Server 1...");
+            document.getElementById('list').innerHTML = "";
+            
+            // Thử lần lượt các server
+            for (let i = 0; i < HOSTS.length; i++) {
                 try {
-                    const res = await fetch(finalUrl);
-                    if (res.ok) {
-                        document.getElementById('statusMsg').innerText = `Đã kết nối thành công!`;
-                        return await res.json();
-                    }
+                    // Gọi API tìm kiếm
+                    const url = `${PROXY}${encodeURIComponent(HOSTS[i] + "/api/v1/search?q=" + query + "&type=video")}`;
+                    const res = await fetch(url);
+                    if(!res.ok) throw new Error("Lỗi mạng");
+                    
+                    const data = await res.json();
+                    renderList(data, HOSTS[i]);
+                    log(""); // Xóa thông báo lỗi
+                    return; // Thành công thì thoát
                 } catch (e) {
-                    console.log(`Server ${i+1} lỗi, thử cái tiếp theo...`);
+                    log(`Server ${i+1} bị chặn, đang đổi server...`);
                 }
             }
-            throw new Error("Tất cả server đều bận");
+            log("Thất bại: Mạng của bạn chặn tất cả Server. Hãy thử bật 1.1.1.1");
         }
 
-        async function startSearch() {
-            const btn = document.querySelector('button');
-            const query = document.getElementById('searchInput').value;
-            if(!query) return;
-
-            btn.innerText = "ĐANG QUÉT...";
-            btn.disabled = true;
-            document.getElementById('results').innerHTML = '';
-
-            try {
-                const data = await getWithProxy(`/search?q=${query}&filter=music_songs`);
-                
-                data.items.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'result-item';
-                    
-                    // Lấy link ảnh (nếu có lỗi thì dùng ảnh rỗng)
-                    const thumb = item.thumbnailUrl || '';
-                    
-                    div.innerHTML = `
-                        <img src="${thumb}" class="result-img" onerror="this.style.display='none'">
-                        <div class="result-info">
-                            <div class="result-title">${item.title}</div>
-                            <div class="result-sub">${formatTime(item.duration)} • ${item.uploaderName}</div>
-                        </div>
-                    `;
-                    
-                    // Bấm vào thì phát nhạc
-                    div.onclick = () => playMusic(item.url.split('v=')[1], item.title, thumb);
-                    document.getElementById('results').appendChild(div);
-                });
-            } catch (e) {
-                alert("Lỗi: Không thể kết nối server nhạc. Hãy thử lại sau vài phút.");
-                document.getElementById('statusMsg').innerText = "Lỗi kết nối mạng/proxy.";
-            }
-            btn.innerText = "TÌM KIẾM";
-            btn.disabled = false;
+        function renderList(data, currentHost) {
+            const list = document.getElementById('list');
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerHTML = `
+                    <img class="thumb" src="${item.videoThumbnails[0].url}">
+                    <div class="info">
+                        <div class="title">${item.title}</div>
+                        <div class="sub">${item.author}</div>
+                    </div>
+                `;
+                // Khi bấm vào bài hát
+                div.onclick = () => play(item.videoId, currentHost, item.title, item.videoThumbnails[0].url);
+                list.appendChild(div);
+            });
         }
 
-        async function playMusic(id, title, thumb) {
-            document.getElementById('player-controls').style.display = 'block';
-            document.getElementById('nowPlaying').innerText = "Đang lấy file nhạc: " + title;
+        async function play(id, host, title, img) {
+            document.getElementById('player').style.display = 'block';
+            document.getElementById('song-name').innerText = "Đang tải: " + title;
             
             try {
-                const data = await getWithProxy(`/streams/${id}`);
+                // Lấy link nhạc trực tiếp
+                const url = `${PROXY}${encodeURIComponent(host + "/api/v1/videos/" + id)}`;
+                const res = await fetch(url);
+                const data = await res.json();
                 
-                // Tìm file nhạc (m4a hoặc webm)
-                const audio = data.audioStreams.find(s => s.mimeType.includes('mp4') || s.mimeType.includes('webm'));
-                
-                if (audio) {
-                    const player = document.getElementById('audioPlayer');
-                    player.src = audio.url;
-                    player.play();
-                    document.getElementById('nowPlaying').innerText = title;
+                // Tìm file audio (định dạng webm hoặc m4a)
+                let audioUrl = "";
+                // Ưu tiên adaptiveFormats (chất lượng cao hơn)
+                const format = data.adaptiveFormats.find(f => f.type.includes("audio/webm"));
+                if(format) {
+                    audioUrl = format.url;
+                } else {
+                    // Nếu không có thì tìm format thường
+                    audioUrl = data.formatStreams.find(f => f.type.includes("audio")).url;
+                }
 
-                    // Hiển thị ở màn hình khóa
+                if(audioUrl) {
+                    const audio = document.getElementById('audio');
+                    audio.src = audioUrl;
+                    document.getElementById('song-name').innerText = title;
+                    
+                    // Cấu hình màn hình khóa
                     if ('mediaSession' in navigator) {
                         navigator.mediaSession.metadata = new MediaMetadata({
-                            title: title,
-                            artist: "Youtube Music V3",
-                            artwork: [{ src: thumb, sizes: '512x512', type: 'image/jpeg' }]
+                            title: title, artist: "Music V4",
+                            artwork: [{ src: img, sizes: '512x512', type: 'image/jpeg' }]
                         });
                     }
-                } else {
-                    alert("Bài này bị lỗi dữ liệu, vui lòng chọn bài khác.");
                 }
             } catch (e) {
-                alert("Không tải được bài hát này. Thử bài khác nhé!");
+                alert("Không lấy được link nhạc. Bài hát này bị giới hạn.");
             }
-        }
-
-        function formatTime(seconds) {
-            if (!seconds) return "";
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            return `${m}:${s < 10 ? '0'+s : s}`;
         }
     </script>
 </body>
