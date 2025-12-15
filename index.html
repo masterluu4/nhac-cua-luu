@@ -3,127 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Music Player No-Ads (V2)</title>
+    <title>Music V3 (Invidious)</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; background: #121212; color: #e0e0e0; margin: 0; }
-        h2 { text-align: center; color: #03DAC6; margin-bottom: 5px; }
-        .status-bar { font-size: 12px; text-align: center; color: #666; margin-bottom: 20px; font-style: italic; }
-        input { width: 100%; padding: 12px; margin-bottom: 15px; background: #333; border: 1px solid #444; color: white; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button { width: 100%; padding: 12px; background: #03DAC6; border: none; color: black; font-weight: bold; border-radius: 8px; font-size: 16px; cursor: pointer; }
-        button:active { opacity: 0.8; }
-        .result-item { padding: 15px; border-bottom: 1px solid #333; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
-        .result-item:active { background: #333; }
-        .duration { font-size: 12px; color: #888; }
-        #player-controls { position: fixed; bottom: 0; left: 0; right: 0; background: #1f1f1f; padding: 15px; text-align: center; border-top: 1px solid #333; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); z-index: 100; }
-        audio { width: 100%; margin-top: 10px; outline: none; }
-        #results { padding-bottom: 120px; } 
+        body { font-family: sans-serif; padding: 20px; background: #0f0f0f; color: #fff; margin: 0; }
+        h2 { text-align: center; color: #ff0000; margin-bottom: 5px; }
+        .status { font-size: 11px; text-align: center; color: #888; margin-bottom: 15px; }
+        input { width: 100%; padding: 12px; background: #222; border: 1px solid #333; color: white; border-radius: 20px; box-sizing: border-box; outline: none; }
+        button { width: 100%; padding: 12px; margin-top: 10px; background: #cc0000; border: none; color: white; font-weight: bold; border-radius: 20px; cursor: pointer; }
+        .item { padding: 15px 0; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .item img { width: 60px; height: 45px; object-fit: cover; border-radius: 4px; }
+        .info { flex: 1; }
+        .title { font-size: 14px; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .author { font-size: 12px; color: #aaa; margin-top: 4px; }
+        #player { position: fixed; bottom: 0; left: 0; right: 0; background: #1a1a1a; padding: 15px; border-top: 1px solid #333; display: none; text-align: center; }
+        audio { width: 100%; margin-top: 10px; }
+        .loading { text-align: center; color: #666; margin-top: 20px; display: none; }
     </style>
 </head>
 <body>
-    <h2>YouTube Audio V2</h2>
-    <div id="server-status" class="status-bar">Sẵn sàng kết nối...</div>
 
-    <input type="text" id="searchInput" placeholder="Nhập tên bài hát (VD: Nhạc thiền)...">
-    <button onclick="searchMusic()">Tìm kiếm</button>
-    <div id="results"></div>
+    <h2>YouTube Music V3</h2>
+    <div id="status" class="status">Đã sẵn sàng</div>
 
-    <div id="player-controls" style="display:none;">
-        <div id="nowPlaying" style="font-weight:bold; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #03DAC6;">Đang tải...</div>
-        <audio id="audioPlayer" controls loop autoplay></audio>
+    <input type="text" id="keyword" placeholder="Tìm tên bài hát..." onkeypress="if(event.keyCode==13) search()">
+    <button onclick="search()">Tìm Kiếm</button>
+    
+    <div id="loading" class="loading">Đang kết nối server...</div>
+    <div id="list" style="padding-bottom: 100px;"></div>
+
+    <div id="player">
+        <div id="p-title" style="font-size: 14px; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+        <audio id="audio" controls autoplay loop></audio>
     </div>
 
     <script>
-        // Danh sách các Server dự phòng (Nếu cái này chết sẽ tự thử cái kia)
-        const API_LIST = [
-            "https://pipedapi.kavin.rocks",
-            "https://api.piped.privacydev.net",
-            "https://pipedapi.drgns.space",
-            "https://api.piped.projectsegfau.lt",
-            "https://pipedapi.tokhmi.xyz"
+        // Danh sách Server Invidious (khác với Piped)
+        const SERVERS = [
+            "https://inv.tux.pizza",
+            "https://invidious.jing.rocks",
+            "https://vid.puffyan.us",
+            "https://invidious.nerdvpn.de",
+            "https://inv.zzls.xyz",
+            "https://invidious.projectsegfau.lt"
         ];
 
-        // Hàm thông minh: Tự động thử từng server cho đến khi thành công
-        async function fetchSmart(endpoint) {
-            const statusDiv = document.getElementById('server-status');
+        let currentServer = SERVERS[0];
+
+        // Hàm kiểm tra server nào còn sống
+        async function findWorkingServer() {
+            const status = document.getElementById('status');
+            status.innerText = "Đang tìm server tốt nhất...";
             
-            for (let i = 0; i < API_LIST.length; i++) {
-                const url = API_LIST[i] + endpoint;
+            for (let url of SERVERS) {
                 try {
-                    statusDiv.innerText = `Đang thử server ${i+1}...`;
-                    const res = await fetch(url);
+                    // Thử ping nhẹ vào server
+                    const res = await fetch(`${url}/api/v1/stats`, { signal: AbortSignal.timeout(2000) });
                     if (res.ok) {
-                        statusDiv.innerText = `Đã kết nối: Server ${i+1}`;
-                        return await res.json();
+                        currentServer = url;
+                        status.innerText = `Đang dùng: ${url.replace('https://', '')}`;
+                        status.style.color = "#00ff00";
+                        return;
                     }
-                } catch (e) {
-                    console.warn(`Server ${i+1} lỗi, đang chuyển server khác...`);
-                }
+                } catch (e) {}
             }
-            statusDiv.innerText = "Tất cả server đều bận. Hãy thử lại sau 1 phút!";
-            throw new Error("All APIs failed");
+            status.innerText = "Cảnh báo: Các server phản hồi chậm.";
+            status.style.color = "orange";
         }
 
-        async function searchMusic() {
-            const btn = document.querySelector('button');
-            const originalText = btn.innerText;
-            btn.innerText = "Đang quét...";
-            btn.disabled = true;
-            
-            const query = document.getElementById('searchInput').value;
-            const list = document.getElementById('results');
-            list.innerHTML = '';
+        // Chạy tìm server ngay khi mở web
+        findWorkingServer();
 
+        async function search() {
+            const key = document.getElementById('keyword').value;
+            if(!key) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('list').innerHTML = '';
+            
             try {
-                // Gọi hàm thông minh thay vì gọi trực tiếp
-                const data = await fetchSmart(`/search?q=${query}&filter=music_songs`);
+                // Gọi API Search của Invidious
+                const res = await fetch(`${currentServer}/api/v1/search?q=${encodeURIComponent(key)}&type=video`);
+                const data = await res.json();
                 
-                data.items.forEach(item => {
+                document.getElementById('loading').style.display = 'none';
+                
+                const listDiv = document.getElementById('list');
+                data.forEach(v => {
+                    // Chỉ lấy video, bỏ qua playlist/channel
+                    if(v.type !== 'video') return;
+
                     const div = document.createElement('div');
-                    div.className = 'result-item';
-                    // Hiển thị thêm thời lượng
-                    const duration = formatDuration(item.duration);
-                    div.innerHTML = `<div>${item.title}</div><div class="duration">${duration}</div>`;
-                    div.onclick = () => playSong(item.url.split('v=')[1], item.title);
-                    list.appendChild(div);
+                    div.className = 'item';
+                    div.innerHTML = `
+                        <img src="${v.videoThumbnails.find(t => t.quality === 'start').url}" onerror="this.src='https://via.placeholder.com/60'">
+                        <div class="info">
+                            <div class="title">${v.title}</div>
+                            <div class="author">${v.author} • ${formatTime(v.lengthSeconds)}</div>
+                        </div>
+                    `;
+                    div.onclick = () => play(v.videoId, v.title, v.author);
+                    listDiv.appendChild(div);
                 });
-            } catch (e) { 
-                alert("Không thể kết nối tới bất kỳ server nào. Vui lòng kiểm tra mạng hoặc thử lại sau."); 
+
+            } catch (e) {
+                alert("Lỗi tìm kiếm. Đang đổi server và thử lại...");
+                await findWorkingServer(); // Đổi server
+                search(); // Thử lại
             }
-            
-            btn.innerText = originalText;
-            btn.disabled = false;
         }
 
-        async function playSong(videoId, title) {
-            document.getElementById('player-controls').style.display = 'block';
-            document.getElementById('nowPlaying').innerText = "Đang lấy link audio: " + title;
+        async function play(id, title, author) {
+            document.getElementById('player').style.display = 'block';
+            document.getElementById('p-title').innerText = "Đang tải: " + title;
             
             try {
-                const data = await fetchSmart(`/streams/${videoId}`);
-                const audioStream = data.audioStreams.find(s => s.mimeType.includes('mp4') || s.mimeType.includes('webm'));
+                // Lấy link stream
+                const res = await fetch(`${currentServer}/api/v1/videos/${id}`);
+                const data = await res.json();
                 
-                if(audioStream) {
-                    const player = document.getElementById('audioPlayer');
-                    player.src = audioStream.url;
-                    document.getElementById('nowPlaying').innerText = title;
-                    player.play();
-                    
-                    // Cập nhật màn hình khóa
+                // Tìm file audio mp4 hoặc webm
+                let stream = data.adaptiveFormats.find(f => f.type.includes("audio/mp4"));
+                if(!stream) stream = data.adaptiveFormats.find(f => f.type.includes("audio"));
+
+                if (stream) {
+                    const audio = document.getElementById('audio');
+                    audio.src = stream.url;
+                    document.getElementById('p-title').innerText = title;
+                    audio.play();
+
+                    // Setup Media Session (màn hình khóa)
                     if ('mediaSession' in navigator) {
                         navigator.mediaSession.metadata = new MediaMetadata({
-                            title: title, artist: "No-Ads Player",
-                            artwork: [{ src: data.thumbnailUrl, sizes: '512x512', type: 'image/jpeg' }]
+                            title: title,
+                            artist: author,
+                            artwork: [{ src: data.videoThumbnails[0].url, sizes: '512x512', type: 'image/jpeg' }]
                         });
+                        
+                        navigator.mediaSession.setActionHandler('play', () => audio.play());
+                        navigator.mediaSession.setActionHandler('pause', () => audio.pause());
                     }
-                } else { alert("Không tìm thấy luồng audio."); }
-            } catch (e) { alert("Lỗi khi tải bài hát."); }
+                } else {
+                    alert("Không tìm thấy luồng nhạc cho bài này.");
+                }
+            } catch (e) {
+                document.getElementById('p-title').innerText = "Lỗi tải nhạc!";
+                console.error(e);
+            }
         }
 
-        function formatDuration(seconds) {
-            if(!seconds) return "";
-            const min = Math.floor(seconds / 60);
-            const sec = seconds % 60;
-            return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
         }
     </script>
 </body>
